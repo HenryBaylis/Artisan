@@ -68,6 +68,8 @@ namespace Artisan.IPC
 
             Svc.PluginInterface.GetIpcProvider<Dictionary<int, string>>("Artisan.GetLists").RegisterFunc(GetLists);
             Svc.PluginInterface.GetIpcProvider<int, object>("Artisan.StartListById").RegisterAction(StartListById);
+            Svc.PluginInterface.GetIpcProvider<string, List<(uint, int)>, int>("Artisan.CreateList").RegisterFunc(CreateList);
+            Svc.PluginInterface.GetIpcProvider<int, bool>("Artisan.DeleteList").RegisterFunc(DeleteList);
             Svc.PluginInterface.GetIpcProvider<int, uint, uint>("Artisan.GetRelicToolListId").RegisterFunc(GetRelicToolListId);
 
             Svc.PluginInterface.GetIpcProvider<uint, uint, bool, object>("Artisan.ChangeExpertProfileID").RegisterAction(ChangeExpertProfileID);
@@ -123,6 +125,8 @@ namespace Artisan.IPC
 
             Svc.PluginInterface.GetIpcProvider<Dictionary<int, string>>("Artisan.GetLists").UnregisterFunc();
             Svc.PluginInterface.GetIpcProvider<int, object>("Artisan.StartListById").UnregisterAction();
+            Svc.PluginInterface.GetIpcProvider<string, List<(uint, int)>, int>("Artisan.CreateList").UnregisterFunc();
+            Svc.PluginInterface.GetIpcProvider<int, bool>("Artisan.DeleteList").UnregisterFunc();
             Svc.PluginInterface.GetIpcProvider<int, int, int>("Artisan.GetRelicToolListId").UnregisterFunc();
 
             Svc.PluginInterface.GetIpcProvider<uint, uint, bool, object>("Artisan.ChangeExpertProfileID").UnregisterAction();
@@ -562,6 +566,52 @@ namespace Artisan.IPC
         public static uint GetRelicToolListId(int stepOrdinal, uint craftTypeSlot)
         {
             return RelicToolPremadeLists.TryGetListId(stepOrdinal, craftTypeSlot, out uint listId) ? listId : 0;
+        }
+
+        /// <summary>
+        /// Creates a crafting list with the player's default list settings: each recipe crafted the given number of
+        /// times, in the order given. Unknown recipe IDs and quantities below 1 are skipped; a recipe given twice is
+        /// merged.
+        /// </summary>
+        /// <returns>The new list's ID, or 0 if none of the recipes were valid.</returns>
+        public static int CreateList(string name, List<(uint RecipeId, int Quantity)> recipes)
+        {
+            var list = new NewCraftingList { Name = name };
+            foreach (var (recipeId, quantity) in recipes)
+            {
+                if (quantity < 1 || LuminaSheets.RecipeSheet?.ContainsKey(recipeId) != true)
+                    continue;
+                if (list.Recipes.FirstOrDefault(x => x.ID == recipeId) is { } existing)
+                    existing.Quantity += quantity;
+                else
+                    list.Recipes.Add(new ListItem { ID = recipeId, Quantity = quantity });
+            }
+
+            if (list.Recipes.Count == 0)
+                return 0;
+
+            list.SetID();
+            list.Save(true);
+            return list.ID;
+        }
+
+        /// <summary>Deletes one of the player's crafting lists (not a premade one). Refuses while that list is running.</summary>
+        /// <returns>False if there's no such list or it's running.</returns>
+        public static bool DeleteList(int listId)
+        {
+            var index = P.Config.NewCraftingLists.FindIndex(x => x.ID == listId);
+            if (index < 0 || (CraftingListUI.Processing && CraftingListUI.selectedList.ID == listId))
+                return false;
+
+            if (P.ws.Windows.TryGetFirst(x => x.WindowName.Contains(listId.ToString()) && x.GetType() == typeof(UI.ListEditor), out var window))
+                P.ws.RemoveWindow(window);
+
+            P.Config.NewCraftingLists.RemoveAt(index);
+            P.Config.Save();
+
+            if (!CraftingListUI.Processing && CraftingListUI.selectedList.ID == listId)
+                CraftingListUI.selectedList = new NewCraftingList();
+            return true;
         }
 
         public static void StartListById(int listId)
