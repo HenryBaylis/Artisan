@@ -70,6 +70,7 @@ namespace Artisan.IPC
             Svc.PluginInterface.GetIpcProvider<int, object>("Artisan.StartListById").RegisterAction(StartListById);
             Svc.PluginInterface.GetIpcProvider<string, List<(uint, int)>, int>("Artisan.CreateList").RegisterFunc(CreateList);
             Svc.PluginInterface.GetIpcProvider<int, bool>("Artisan.DeleteList").RegisterFunc(DeleteList);
+            Svc.PluginInterface.GetIpcProvider<bool>("Artisan.CancelList").RegisterFunc(CancelList);
             Svc.PluginInterface.GetIpcProvider<int, uint, uint>("Artisan.GetRelicToolListId").RegisterFunc(GetRelicToolListId);
 
             Svc.PluginInterface.GetIpcProvider<uint, uint, bool, object>("Artisan.ChangeExpertProfileID").RegisterAction(ChangeExpertProfileID);
@@ -127,6 +128,7 @@ namespace Artisan.IPC
             Svc.PluginInterface.GetIpcProvider<int, object>("Artisan.StartListById").UnregisterAction();
             Svc.PluginInterface.GetIpcProvider<string, List<(uint, int)>, int>("Artisan.CreateList").UnregisterFunc();
             Svc.PluginInterface.GetIpcProvider<int, bool>("Artisan.DeleteList").UnregisterFunc();
+            Svc.PluginInterface.GetIpcProvider<bool>("Artisan.CancelList").UnregisterFunc();
             Svc.PluginInterface.GetIpcProvider<int, int, int>("Artisan.GetRelicToolListId").UnregisterFunc();
 
             Svc.PluginInterface.GetIpcProvider<uint, uint, bool, object>("Artisan.ChangeExpertProfileID").UnregisterAction();
@@ -611,6 +613,25 @@ namespace Artisan.IPC
 
             if (!CraftingListUI.Processing && CraftingListUI.selectedList.ID == listId)
                 CraftingListUI.selectedList = new NewCraftingList();
+            return true;
+        }
+
+        /// <summary>
+        /// Cancels the running (or paused) list, as the Cancel button in the Processing List window does. The list
+        /// itself is kept.
+        /// </summary>
+        /// <returns>False if no list was running.</returns>
+        public static bool CancelList()
+        {
+            if (!CraftingListUI.Processing)
+                return false;
+
+            CraftingListUI.Processing = false;
+            CraftingListFunctions.Paused = false;
+            P.TM.Abort();
+            CraftingListFunctions.CLTM.Abort();
+            PreCrafting.Tasks.Clear();
+            Crafting.CraftFinished -= CraftingListUI.UpdateListTimer;
             return true;
         }
 
